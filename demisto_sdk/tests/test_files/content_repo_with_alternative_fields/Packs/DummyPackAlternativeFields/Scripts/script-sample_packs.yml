@@ -1,0 +1,34 @@
+commonfields:
+  id: id
+  version: -1
+name: name
+script: >-
+  import json
+  def main():
+      execute_command_result = demisto.executeCommand("ParseEmailFiles", {
+          "entryid": demisto.args().get("entryId"),
+          "parse_only_headers": "true",
+          "max_depth": "1"
+      })
+
+  if __name__ == '__builtin__':
+      main()
+type: python
+subtype: python3
+tags:
+- Utility
+comment: Expose the incident owner into IncidentOwner context key
+enabled: true
+outputs:
+- contextPath: IncidentOwner.name
+  description: Incident owner full name
+- contextPath: IncidentOwner.email
+  description: Incident owner email address
+- contextPath: IncidentOwner.phone
+  description: Incident owner phone number
+- contextPath: IncidentOwner.roles
+  description: Incident owner roles
+scripttarget: 0
+fromversion: 6.0.0
+name:marketplacev2: name_x2
+comment:marketplacev2: comment_x2

@@ -1,0 +1,115 @@
+id: sample pb
+version: -1
+name: sample pb
+description: Sample playbook for testing
+starttaskid: "0"
+tasks:
+  "0":
+    id: "0"
+    taskid: 7ce1bd8c-871a-488d-8b08-2f76ee620d7b
+    type: start
+    task:
+      id: 7ce1bd8c-871a-488d-8b08-2f76ee620d7b
+      version: -1
+      name: ""
+      iscommand: false
+      brand: ""
+      description: ''
+    nexttasks:
+      '#none#':
+      - "1"
+    separatecontext: false
+    view: |-
+      {
+        "position": {
+          "x": 50,
+          "y": 50
+        }
+      }
+    note: false
+    timertriggers: []
+    ignoreworker: false
+    skipunavailable: false
+    quietmode: 0
+  "1":
+    id: "1"
+    taskid: 6bd0982d-50e0-4bc4-882a-f6fb14fd4db0
+    type: regular
+    task:
+      id: 6bd0982d-50e0-4bc4-882a-f6fb14fd4db0
+      version: -1
+      name: DeleteContext
+      description: Delete field from context
+      scriptName: DeleteContext
+      type: regular
+      iscommand: false
+      brand: ""
+    scriptarguments:
+      index: {}
+      key:
+        simple: "foo"
+      keysToKeep: {}
+      subplaybook: {}
+    separatecontext: false
+    view: |-
+      {
+        "position": {
+          "x": 50,
+          "y": 195
+        }
+      }
+    note: false
+    timertriggers: []
+    ignoreworker: false
+    skipunavailable: false
+    quietmode: 0
+view: |-
+  {
+    "linkLabelsPosition": {},
+    "paper": {
+      "dimensions": {
+        "height": 240,
+        "width": 380,
+        "x": 50,
+        "y": 50
+      }
+    }
+  }
+inputs:
+- description: Sample description for first input.
+  key: Input1
+  playbookInputQuery:
+  required: false
+  value: {}
+- description: Sample description for second input.
+  key: Input2
+  playbookInputQuery:
+  required: false
+  value: {}
+- description: Sample description for third input.
+  key: Input3
+  playbookInputQuery:
+  required: false
+  value: {}
+inputSections:
+- name: InputsSection 1
+  description: This is a description for section 1.
+  inputs:
+  - Input1
+  - Input2
+- name: InputsSection 2
+  description: This is a description for section 2.
+  inputs:
+  - Input3
+outputs:
+- contextPath: DBotScore.Indicator
+  description: The indicator that was tested.
+  type: string
+outputSections:
+- name: OutputsSection
+  description: This is a description.
+  outputs:
+  - DBotScore.Indicator
+fromversion: 5.0.0
+tests:
+- No tests

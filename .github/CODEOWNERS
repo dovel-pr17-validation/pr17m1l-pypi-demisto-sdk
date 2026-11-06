@@ -1,0 +1,29 @@
+# Infra team
+* @demisto/marketplace-infra-tls
+# Validations
+demisto-sdk/demisto_sdk/commands/validate/validate_manager.py @yedidyacohenpalo @demisto/marketplace-infra-tls
+demisto_sdk/commands/common/hook_validations/ @yedidyacohenpalo @demisto/marketplace-infra-tls
+demisto_sdk/commands/validate/default_config.toml @yedidyacohenpalo @demisto/marketplace-infra-tls
+demisto_sdk/commands/validate/sdk_validation_config.toml @yedidyacohenpalo @demisto/marketplace-infra-tls
+
+# VS Code plugin
+.vscode/ @shmuel44 @demisto/marketplace-infra-tls
+.devcontainer/ @shmuel44 @demisto/marketplace-infra-tls
+
+# Github Actions
+.github/workflows @shmuel44 @demisto/marketplace-infra-tls
+
+# Dependencies
+Pipfile* @shmuel44 @demisto/marketplace-infra-tls
+pyproject.toml @shmuel44 @demisto/marketplace-infra-tls
+
+# Pytest.ini
+pytest.ini @demisto/marketplace-infra-tls
+
+# Content graph
+demisto_sdk/commands/content_graph/** @demisto/marketplace-infra-tls
+
+# SDK Nightly gate config - changes to the gated path list must be
+# reviewed by the infra team so the policy doesn't drift silently.
+.github/nightly-gate-paths.yml @demisto/marketplace-infra-tls
+Utils/github_workflow_scripts/nightly_gate/** @demisto/marketplace-infra-tls

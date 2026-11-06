@@ -1,0 +1,105 @@
+category: Authentication
+commonfields:
+  id: TestIntegPackage
+  version: -1
+provider: Test Provider
+configuration:
+- defaultvalue: https://example.net
+  display: Server URL (e.g. https://example.net)  # this is a comment text inside a file 033dab25fd9655480dbec3a4c579a0e6
+  name: url
+  required: true
+  type: 0
+- display: Username
+  name: credentials
+  required: true
+  type: 9
+  hidden:
+    - xsoar
+- display: Trust any certificate (not secure)
+  name: insecure
+  required: false
+  type: 8
+- display: Use system proxy settings
+  name: proxy
+  required: false
+  type: 8
+- display: Should be hidden on all XSOAR only
+  name: hidden_in_all_xsoar
+  required: false
+  hidden:
+    - xsoar
+  type: 8
+- display: Should be hidden on XSIAM only
+  name: hidden_on_xsiam
+  required: false
+  hidden:
+    - marketplacev2
+  type: 8
+- display: attribute is True Should be hidden in all marketplaces
+  name: attribute_is_true
+  required: false
+  hidden: true
+  type: 8
+- display: Should be hidden on all XSOAR and marketplaceV2 - attribute lists both marketplaces
+  name: attribute_lists_both
+  required: false
+  hidden:
+    - xsoar
+    - marketplacev2
+  type: 8
+- display: Should not be hidden - no hidden attribute
+  name: no_hidden_attribute
+  required: false
+  type: 8
+- display: Should not be hidden - hidden attribute is False
+  name: attribute_is_false
+  required: false
+  hidden: false
+  type: 8
+- display: Should be hidden on XSOAR_SAAS only
+  name: hidden_on_xsoar_saas
+  required: false
+  hidden:
+    - xsoar_saas
+  type: 8
+- display: Should be hidden on both XSOAR_SAAS and MarketplaceV2
+  name: hidden_on_both_xsoar_saas_xsiam
+  required: false
+  hidden:
+    - xsoar_saas
+    - marketplacev2
+  type: 8
+- display: Should be hidden on XSOAR_ON_PREM only
+  name: hidden_on_xsoar_on_prem
+  required: false
+  hidden:
+    - xsoar_on_prem
+  type: 8
+description: This is the Hello World integration for getting started.
+display: TestIntegPackage
+name: TestIntegPackage
+script:
+  commands:
+  - arguments:
+    - default: false
+      description: The name of whom you want to say hello to.
+      isArray: false
+      name: name
+      required: false
+      secret: false
+    deprecated: false
+    description: Hello command - prints hello to anyone
+    execution: false
+    name: helloworld-say-hello
+    outputs:
+    - contextPath: hello
+      description: Should be Hello **something** here
+      type: String
+  isfetch: false
+  runonce: false
+  script: '-'
+  type: python
+  subtype: python3
+  dockerimage: demisto/python3:3.9.9.25564
+tests:
+- No tests (auto formatted)

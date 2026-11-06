@@ -1,0 +1,524 @@
+import contextlib
+import os
+import sys
+from pathlib import Path
+from typing import Optional
+
+import git
+import typer
+
+from demisto_sdk.commands.common.constants import (
+    SDK_OFFLINE_ERROR_MESSAGE,
+    ExecutionMode,
+)
+from demisto_sdk.commands.common.content_constant_paths import CONTENT_PATH
+from demisto_sdk.commands.common.logger import logger, logging_setup_decorator
+from demisto_sdk.commands.common.tools import (
+    is_external_repository,
+    is_sdk_defined_working_offline,
+)
+from demisto_sdk.commands.content_graph.interface import ContentGraphInterface
+from demisto_sdk.commands.validate.config_reader import ConfigReader
+from demisto_sdk.commands.validate.initializer import (
+    ConnectorAwareInitializer,
+    Initializer,
+)
+from demisto_sdk.commands.validate.old_validate_manager import OldValidateManager
+from demisto_sdk.commands.validate.private_content_manager import PrivateContentManager
+from demisto_sdk.commands.validate.unified_connector_content_manager import (
+    UnifiedConnectorContentManager,
+)
+from demisto_sdk.commands.validate.validate_manager import ValidateManager
+from demisto_sdk.commands.validate.validation_results import ResultWriter
+from demisto_sdk.commands.validate.validators.base_validator import BaseValidator
+from demisto_sdk.utils.utils import update_command_args_from_config_file
+
+
+def validate_paths(
+    input_paths: Optional[str],
+    private_content_path: Optional[Path],
+    connectors_content_path: Optional[Path] = None,
+) -> Optional[str]:
+    if not input_paths:  # If no input is provided, just return None
+        return None
+
+    paths = input_paths.split(",")
+    for path in paths:
+        path_obj = Path(path)
+        if path_obj.exists():
+            continue
+        # Fall back to checking under any external repo the user provided:
+        # content-private (private_content_path) or UCC (connectors_content_path).
+        if private_content_path and (Path(private_content_path) / path_obj).exists():
+            continue
+        if (
+            connectors_content_path
+            and (Path(connectors_content_path) / path_obj).exists()
+        ):
+            continue
+        raise typer.BadParameter(f"The path '{path}' does not exist.")
+
+    return input_paths
+
+
+@logging_setup_decorator
+def validate(
+    ctx: typer.Context,
+    file_paths: str = typer.Argument(None, exists=True, resolve_path=True),
+    no_conf_json: bool = typer.Option(False, help="Skip conf.json validation."),
+    id_set: bool = typer.Option(
+        False, "-s", "--id-set", help="Perform validations using the id_set file."
+    ),
+    id_set_path: Path = typer.Option(
+        None,
+        "-idp",
+        "--id-set-path",
+        help="Path of the id-set.json used for validations.",
+    ),
+    graph: bool = typer.Option(
+        False, "-gr", "--graph", help="Perform validations on content graph."
+    ),
+    prev_ver: str = typer.Option(
+        None, help="Previous branch or SHA1 commit to run checks against."
+    ),
+    no_backward_comp: bool = typer.Option(
+        False, help="Whether to check backward compatibility."
+    ),
+    use_git: bool = typer.Option(
+        False, "-g", "--use-git", help="Validate changes using git."
+    ),
+    post_commit: bool = typer.Option(
+        False,
+        "-pc",
+        "--post-commit",
+        help="Run validation only on committed changed files.",
+    ),
+    staged: bool = typer.Option(
+        False, "-st", "--staged", help="Ignore unstaged files."
+    ),
+    include_untracked: bool = typer.Option(
+        False,
+        "-iu",
+        "--include-untracked",
+        help="Whether to include untracked files in the validation.",
+    ),
+    validate_all: bool = typer.Option(
+        False, "-a", "--validate-all", help="Run all validation on all files."
+    ),
+    input: Optional[str] = typer.Option(
+        None,
+        "-i",
+        "--input",
+        help="Path of the content pack/file to validate.",
+    ),
+    skip_pack_release_notes: bool = typer.Option(
+        False, help="Skip validation of pack release notes."
+    ),
+    print_ignored_errors: bool = typer.Option(
+        False, help="Print ignored errors as warnings."
+    ),
+    print_ignored_files: bool = typer.Option(False, help="Print ignored files."),
+    no_docker_checks: bool = typer.Option(
+        False, help="Whether to run docker image validation."
+    ),
+    silence_init_prints: bool = typer.Option(
+        False, help="Skip the initialization prints."
+    ),
+    skip_pack_dependencies: bool = typer.Option(
+        False, help="Skip validation of pack dependencies."
+    ),
+    create_id_set: bool = typer.Option(
+        False, help="Whether to create the id_set.json file."
+    ),
+    json_file: str = typer.Option(
+        None, "-j", "--json-file", help="The JSON file path to output command results."
+    ),
+    skip_schema_check: bool = typer.Option(
+        False, help="Whether to skip the file schema check."
+    ),
+    debug_git: bool = typer.Option(
+        False, help="Whether to print debug logs for git statuses."
+    ),
+    print_pykwalify: bool = typer.Option(
+        False, help="Whether to print the pykwalify log errors."
+    ),
+    quiet_bc_validation: bool = typer.Option(
+        False, help="Set backward compatibility validation errors as warnings."
+    ),
+    allow_skipped: bool = typer.Option(
+        False, help="Don't fail on skipped integrations."
+    ),
+    no_multiprocessing: bool = typer.Option(
+        False, help="Run validate all without multiprocessing."
+    ),
+    run_specific_validations: str = typer.Option(
+        None,
+        "-sv",
+        "--run-specific-validations",
+        help="Comma separated list of validations to run.",
+    ),
+    allow_ignore_all_errors: bool = typer.Option(
+        False,
+        "-iae",
+        "--allow-ignore-all-errors",
+        help="Whether to allow ignoring all error_codes or only the ones appear in the config file.",
+    ),
+    category_to_run: str = typer.Option(
+        None, help="Run specific validations by stating category."
+    ),
+    handling_private_repositories: bool = typer.Option(
+        False,
+        "--handling-private-repositories",
+        help="Enable handling of private repositories when looking for status files.",
+    ),
+    fix: bool = typer.Option(
+        False, "-f", "--fix", help="Whether to autofix failing validations."
+    ),
+    config_path: Path = typer.Option(None, help="Path for a config file to run."),
+    private_content_path: Path = typer.Option(
+        None, help="Path to the private content repository."
+    ),
+    connectors_content_path: Path = typer.Option(
+        None,
+        "-ccp",
+        "--connectors-content-path",
+        help=(
+            "Path to the Unified Connector Content (UCC) repository "
+            "(containing a 'connectors/' directory). Use this to validate an "
+            "external UCC checkout together with a plain content checkout: "
+            "connectors are temporarily synced into the main content repo for "
+            "the duration of the run and cleaned up on exit. Works with both "
+            "-a (validate all synced connectors) and -g (validate only the "
+            "connectors changed in the UCC repo's own git diff)."
+        ),
+    ),
+    ignore_support_level: bool = typer.Option(
+        False, help="Skip validations based on support level."
+    ),
+    run_old_validate: bool = typer.Option(
+        False, help="Whether to run the old validate flow."
+    ),
+    skip_new_validate: bool = typer.Option(
+        False, help="Whether to skip the new validate flow."
+    ),
+    run_connectors_validation: bool = typer.Option(
+        False,
+        "--run-connectors-validation",
+        help="Parse only integrations and connectors and match them for easier connector-specific validators (CO category).",
+    ),
+    create_graph_from_scratch: bool = typer.Option(
+        False,
+        "--create-graph-from-scratch",
+        help="If set, creates the content graph from scratch instead of downloading it from the bucket.",
+    ),
+    ignore: list[str] = typer.Option(
+        None, help="An error code to not run. Can be repeated."
+    ),
+    console_log_threshold: str = typer.Option(
+        None,
+        "--console-log-threshold",
+        help="Minimum logging threshold for console output. Possible values: DEBUG, INFO, SUCCESS, WARNING, ERROR.",
+    ),
+    file_log_threshold: str = typer.Option(
+        None, "--file-log-threshold", help="Minimum logging threshold for file output."
+    ),
+    log_file_path: str = typer.Option(
+        None, "--log-file-path", help="Path to save log files."
+    ),
+):
+    """
+    This command ensures that the content repository files are valid and are able to be processed by the platform.
+    This is used in our validation process both locally and in Gitlab.
+    """
+    if is_sdk_defined_working_offline():
+        typer.echo(SDK_OFFLINE_ERROR_MESSAGE, err=True)
+        raise typer.Exit(1)
+
+    if file_paths and not input:
+        input = file_paths
+
+    validate_paths(input, private_content_path, connectors_content_path)
+
+    run_with_mp = not no_multiprocessing
+    update_command_args_from_config_file("validate", ctx.params)
+    sdk = ctx.obj
+    sys.path.append(sdk.configuration.env_dir)
+
+    if post_commit and staged:
+        logger.error("Cannot use both post-commit and staged flags.")
+        raise typer.Exit(1)
+
+    is_external_repo = is_external_repository()
+    file_path = input
+    execution_mode = determine_execution_mode(
+        file_path, validate_all, use_git, post_commit
+    )
+    exit_code = 0
+
+    # Check environment variables
+    run_new_validate = not skip_new_validate or (
+        (env_flag := os.getenv("SKIP_NEW_VALIDATE")) and str(env_flag).lower() == "true"
+    )
+    run_old_validate = run_old_validate or (
+        (env_flag := os.getenv("RUN_OLD_VALIDATE")) and str(env_flag).lower() == "true"
+    )
+
+    # Log warnings for ignored flags
+    warn_on_ignored_flags(run_new_validate, run_old_validate, ctx.params)
+
+    try:
+        # Run old validation flow
+        if run_old_validate:
+            logger.warning(
+                "<yellow>Old validate is being used. This flow will be deprecated and removed in the near future. Please use the new validate flow.</yellow>"
+            )
+            exit_code += run_old_validation(
+                file_path, is_external_repo, run_with_mp, **ctx.params
+            )
+
+        # Run new validation flow
+        if run_new_validate:
+            # Wrap the run in the matching context manager so external repo files
+            # are copied+staged before ContentDTO.from_path() / the git-diff
+            # collection runs, and cleaned up afterwards (even on Ctrl+C).
+            #
+            # Private content (Packs/) is only copied in -a (ALL_FILES) mode.
+            # In -g (USE_GIT) the private content flow is left untouched: the
+            # initializer git-diffs the private repo directly (see
+            # Initializer.collect_files_to_run), so no copy is needed.
+            #
+            # Unified connector content (connectors/) is copied in both -a and
+            # -g. In -g only the connectors actually changed in the UCC repo's
+            # own git diff are copied+staged (changed_only=True), since the graph
+            # only reparses the changed items. In -a every connector is copied
+            # (changed_only=False), since the whole repo is reparsed.
+            #
+            # When both apply they nest inside a single ExitStack so cleanup
+            # happens in LIFO order.
+            connectors_repo_modes = (
+                ExecutionMode.ALL_FILES,
+                ExecutionMode.USE_GIT,
+            )
+            changed_only = execution_mode == ExecutionMode.USE_GIT
+            with contextlib.ExitStack() as stack:
+                if execution_mode == ExecutionMode.ALL_FILES and ctx.params.get(
+                    "private_content_path"
+                ):
+                    logger.info(
+                        f"Using PrivateContentManager for {execution_mode} mode "
+                        f"with private content path: "
+                        f"{ctx.params['private_content_path']}"
+                    )
+                    stack.enter_context(
+                        PrivateContentManager(
+                            private_content_path=ctx.params["private_content_path"],
+                            content_path=CONTENT_PATH,
+                        )
+                    )
+                if execution_mode in connectors_repo_modes and ctx.params.get(
+                    "connectors_content_path"
+                ):
+                    logger.info(
+                        f"Using UnifiedConnectorContentManager for "
+                        f"{execution_mode} mode with connectors content path: "
+                        f"{ctx.params['connectors_content_path']}"
+                    )
+                    stack.enter_context(
+                        UnifiedConnectorContentManager(
+                            connectors_content_path=ctx.params[
+                                "connectors_content_path"
+                            ],
+                            content_path=CONTENT_PATH,
+                            changed_only=changed_only,
+                        )
+                    )
+                exit_code += run_new_validation(file_path, execution_mode, **ctx.params)
+
+        raise typer.Exit(code=exit_code)
+    except (git.InvalidGitRepositoryError, git.NoSuchPathError, FileNotFoundError) as e:
+        logger.error(f"{e}")
+        logger.error(
+            "You may not be running `demisto-sdk validate` from the content directory.\n"
+            "Please run this command from the content directory."
+        )
+        raise typer.Exit(1)
+
+
+def determine_execution_mode(file_path, validate_all, use_git, post_commit):
+    if validate_all:
+        return ExecutionMode.ALL_FILES
+    elif file_path:
+        return ExecutionMode.SPECIFIC_FILES
+    elif use_git:
+        return ExecutionMode.USE_GIT
+    else:
+        # Default case: fall back to using git for validation
+        return ExecutionMode.USE_GIT
+
+
+def warn_on_ignored_flags(run_new_validate, run_old_validate, params):
+    if not run_new_validate:
+        for flag in ["fix", "ignore_support_level", "config_path", "category_to_run"]:
+            if params.get(flag):
+                logger.warning(
+                    f"Flag '{flag.replace('_', '-')}' is ignored when skipping new validation."
+                )
+
+    if not run_old_validate:
+        # NOTE: 'graph' is intentionally NOT in this list. It used to be
+        # warned-and-ignored when the old validation flow was skipped, but the
+        # new flow now honours it too - see attach_graph_interface_if_requested
+        # in run_new_validation(), which wires a live ContentGraphInterface
+        # into BaseValidator.graph_interface so validators like CO100 (and
+        # other graph-dependent validators) can perform graph lookups against
+        # an externally-populated Neo4j.
+        for flag in [
+            "no_backward_comp",
+            "no_conf_json",
+            "id_set",
+            "skip_pack_release_notes",
+            "print_ignored_errors",
+            "print_ignored_files",
+            "no_docker_checks",
+            "silence_init_prints",
+            "skip_pack_dependencies",
+            "id_set_path",
+            "create_id_set",
+            "skip_schema_check",
+            "debug_git",
+            "include_untracked",
+            "quiet_bc_validation",
+            "allow_skipped",
+            "no_multiprocessing",
+        ]:
+            if params.get(flag):
+                logger.warning(
+                    f"Flag '{flag.replace('_', '-')}' is ignored when skipping old validation."
+                )
+
+
+def run_old_validation(file_path, is_external_repo, run_with_mp, **kwargs):
+    validator = OldValidateManager(
+        is_backward_check=not kwargs["no_backward_comp"],
+        only_committed_files=kwargs["post_commit"],
+        prev_ver=kwargs["prev_ver"],
+        skip_conf_json=kwargs["no_conf_json"],
+        use_git=kwargs["use_git"],
+        file_path=file_path,
+        validate_all=kwargs["validate_all"],
+        validate_id_set=kwargs["id_set"],
+        validate_graph=kwargs["graph"],
+        skip_pack_rn_validation=kwargs["skip_pack_release_notes"],
+        print_ignored_errors=kwargs["print_ignored_errors"],
+        is_external_repo=is_external_repo,
+        print_ignored_files=kwargs["print_ignored_files"],
+        no_docker_checks=kwargs["no_docker_checks"],
+        silence_init_prints=kwargs["silence_init_prints"],
+        skip_dependencies=kwargs["skip_pack_dependencies"],
+        id_set_path=kwargs["id_set_path"],
+        staged=kwargs["staged"],
+        create_id_set=kwargs["create_id_set"],
+        json_file_path=kwargs["json_file"],
+        skip_schema_check=kwargs["skip_schema_check"],
+        debug_git=kwargs["debug_git"],
+        include_untracked=kwargs["include_untracked"],
+        quiet_bc=kwargs["quiet_bc_validation"],
+        multiprocessing=run_with_mp,
+        check_is_unskipped=not kwargs.get("allow_skipped", False),
+        specific_validations=kwargs.get("run_specific_validations"),
+    )
+    return validator.run_validation()
+
+
+def attach_graph_interface_if_requested(use_graph: bool) -> None:
+    """Wire a live ``ContentGraphInterface`` onto ``BaseValidator`` when -gr/--graph is set.
+
+    The new validation flow's validators (e.g. CO100, GR*) read
+    ``BaseValidator.graph_interface`` directly. Historically the ``--graph``
+    flag was only consumed by the old validation flow and was warned-and-
+    ignored in the new flow, leaving ``graph_interface`` as ``None`` and
+    causing graph-dependent validators to fall back to "Graph interface not
+    available" no-graph behaviour (which produces false-positive failures
+    against packs that *are* in the graph).
+
+    When ``--graph`` is set we attach a ``ContentGraphInterface()`` - which
+    is the concrete ``Neo4jContentGraphInterface`` - so validators see the
+    already-populated Neo4j instance (e.g. one populated by a preceding
+    ``demisto-sdk graph update`` invocation in CI). The graph is *not*
+    rebuilt here; we only connect to the running database. If the connection
+    fails (Neo4j down, wrong credentials, etc.) we log a warning and leave
+    ``graph_interface`` unset so the no-graph fallback path runs instead of
+    crashing the validate command.
+
+    Args:
+        use_graph: Value of the ``--graph`` / ``-gr`` CLI flag.
+    """
+    if not use_graph:
+        return
+    if BaseValidator.graph_interface is not None:
+        # Already wired up (e.g. by a unit test). Don't overwrite.
+        logger.debug(
+            "BaseValidator.graph_interface is already set; skipping --graph attach."
+        )
+        return
+    try:
+        BaseValidator.graph_interface = ContentGraphInterface()
+        logger.info(
+            "--graph: attached live ContentGraphInterface for new-flow validators."
+        )
+    except Exception as e:
+        logger.warning(
+            "--graph was requested but connecting to the content graph failed: "
+            f"{e}. Graph-dependent validators will fall back to no-graph mode."
+        )
+
+
+def run_new_validation(file_path, execution_mode, **kwargs):
+    validation_results = ResultWriter(json_file_path=kwargs.get("json_file"))
+    attach_graph_interface_if_requested(bool(kwargs.get("graph")))
+    config_reader = ConfigReader(
+        path=kwargs.get("config_path"),
+        category=kwargs.get("category_to_run"),
+        explicitly_selected=(kwargs.get("run_specific_validations") or "").split(","),
+        allow_ignore_all_errors=kwargs["allow_ignore_all_errors"],
+    )
+    # Explicit base-class annotation: without it mypy infers ``initializer``'s
+    # type from the first branch (the narrower ``ConnectorAwareInitializer``)
+    # and then rejects the ``Initializer`` assignment in the ``else``.
+    initializer: Initializer
+    if kwargs.get("run_connectors_validation"):
+        initializer = ConnectorAwareInitializer(
+            staged=kwargs["staged"],
+            committed_only=kwargs["post_commit"],
+            prev_ver=kwargs["prev_ver"],
+            file_path=file_path,
+            execution_mode=execution_mode,
+            handling_private_repositories=kwargs.get(
+                "handling_private_repositories", False
+            ),
+            private_content_path=kwargs.get("private_content_path"),
+            connectors_content_path=kwargs.get("connectors_content_path"),
+        )
+    else:
+        initializer = Initializer(
+            staged=kwargs["staged"],
+            committed_only=kwargs["post_commit"],
+            prev_ver=kwargs["prev_ver"],
+            file_path=file_path,
+            execution_mode=execution_mode,
+            handling_private_repositories=kwargs.get(
+                "handling_private_repositories", False
+            ),
+            private_content_path=kwargs.get("private_content_path"),
+        )
+    validator_v2 = ValidateManager(
+        file_path=file_path,
+        initializer=initializer,
+        validation_results=validation_results,
+        config_reader=config_reader,
+        allow_autofix=kwargs["fix"],
+        ignore_support_level=kwargs["ignore_support_level"],
+        ignore=kwargs["ignore"],
+        create_graph_from_scratch=kwargs.get("create_graph_from_scratch", False),
+    )
+    return validator_v2.run_validations()

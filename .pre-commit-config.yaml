@@ -1,0 +1,62 @@
+exclude: demisto_sdk/tests/test_files/.*|.circleci/config.yml|demisto_sdk/commands/.*/tests/test_files/.*
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.6.6
+  hooks:
+  - id: ruff
+    args:
+    - --fix
+    - --exit-non-zero-on-fix
+    - --show-fixes
+  - id: ruff-format
+- repo: https://github.com/pappasam/toml-sort
+  rev: v0.23.1
+  hooks:
+    - id: toml-sort-fix
+      exclude: poetry.lock
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.4.0
+  hooks:
+  - id: trailing-whitespace
+    args:
+    - --markdown-linebreak-ext=md
+  - id: end-of-file-fixer
+  - id: check-docstring-first
+    exclude: demisto_sdk/commands/init/templates/.*
+  - id: check-json
+    exclude: .vscode/.*|setup_env/.*
+  - id: check-yaml
+    language_version: python3
+  - id: name-tests-test
+    exclude: test_tools.py|demisto_sdk/commands/download/tests/tests_env/.*|demisto_sdk/commands/create_artifacts/tests/data|demisto_sdk/commands/common/content/tests/objects/pack_objects/script/script_test/TestNotUnifiedScript|demisto_sdk/commands/common/content/tests/objects/pack_objects/integration/integration_test/TestNotUnifiedIntegration|demisto_sdk/commands/test_content/tests/DemistoClientMock
+- repo: https://github.com/abravalheri/validate-pyproject
+  rev: v0.13
+  hooks:
+  - id: validate-pyproject
+- repo: https://github.com/python-poetry/poetry
+  rev: 1.8.2
+  hooks:
+  - id: poetry-check
+    args:
+    - --lock
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v0.982
+  hooks:
+  - id: mypy
+    exclude: tests/.*|demisto_sdk/commands/init/templates/.*
+    language: system
+- repo: local
+  hooks:
+    - id: generate-command-docs
+      name: Generate Documentation for Changed Commands  # Required when using local hooks
+      entry: generate-command-docs
+      language: python
+      files: ^.*_setup\.py$
+      pass_filenames: false
+    - id: validate-validation-config-file
+      name: Validation for validate_config file  # Required when using local hooks
+      entry: validate-validation-config-file
+      language: python
+      pass_filenames: false
+      args:
+      - --config-path=demisto_sdk/commands/validate/sdk_validation_config.toml

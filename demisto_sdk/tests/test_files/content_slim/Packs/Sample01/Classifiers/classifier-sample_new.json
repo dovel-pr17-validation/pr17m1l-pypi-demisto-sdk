@@ -1,0 +1,8 @@
+{
+  "toVersion": "4.0.0",
+  "transformer": {},
+  "keyTypeMap": {},
+  "type": "classification",
+  "id": "test",
+  "name": "test"
+}

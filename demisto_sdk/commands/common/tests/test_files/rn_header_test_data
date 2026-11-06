@@ -1,0 +1,68 @@
+#### Integrations
+##### test
+- Added x y z
+
+#### Scripts
+##### New: test
+- Added x y z
+
+#### Playbooks
+##### test
+- Added x y z
+- Ignore the yml suffix, it is not a real playbook.
+
+#### Dashboards
+##### test
+- Added x y z
+- Ignore the json suffix, it is not a real dashboard.
+
+#### Incident Fields
+##### test1
+- Added x y z
+
+##### New: test2
+- New: Added x y z
+
+#### Incident Types
+##### test
+- Added x y z
+
+#### Indicator Fields
+##### test
+- Added x y z
+
+#### Indicator Types
+##### test
+- Added x y z
+
+#### Layouts
+##### test
+- Added x y z
+
+#### Mappers
+##### New: test
+- Added x y z
+- Ignore the json suffix, it is not a real mapper.
+
+#### Classifiers
+##### test
+- Added x y z
+- Ignore the json suffix, it is not a real classifier.
+
+#### Widgets
+##### New: test
+- Added x y z
+- Ignore the json suffix, it is not a real widget.
+
+#### Correlation Rules
+##### New: test
+- Added x y z
+
+#### XSIAM Dashboards
+##### New: test
+- Added x y z
+- Ignore the json suffix, it is not a real dashboard.
+
+#### Triggers Recommendations
+##### test
+- Added x y z

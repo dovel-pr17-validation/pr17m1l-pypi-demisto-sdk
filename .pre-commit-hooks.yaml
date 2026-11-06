@@ -1,0 +1,114 @@
+
+- id: run-unit-tests
+  name: Run unit tests
+  description: Run content test using docker
+  entry: demisto-sdk run-unit-tests
+  language: python
+  files: &files
+    .*Packs/.*/(?:Integrations|Scripts)/.*.yml$
+
+- id: validate
+  name: validate
+  description: validate content
+  entry: demisto-sdk validate
+  args: ["-g"]
+  pass_filenames: false
+  language: python
+  require_serial: true
+
+- id: format
+  name: format
+  description: Format non-code files, to comply with XSOAR standards.
+  entry: demisto-sdk format
+  args: ["-ud", "-n", "--no-validate", "-g"]
+  language: python
+  pass_filenames: false
+  require_serial: true
+
+- id: secrets
+  name: secrets
+  description: Check for secrets in files.
+  entry: demisto-sdk secrets
+  args: ["--ignore-entropy"]
+  pass_filenames: false
+  language: python
+
+- id: no-implicit-optional
+  name: no implicit optional
+  description: Making code implicit-optional type hints PEP 484 compliant.
+  entry: no_implicit_optional
+  require_serial: true
+  language: python
+  types: [python]
+
+- id: mypy
+  name: mypy
+  entry: mypy
+  language: python
+  require_serial: true
+  types: [python]
+  exclude: tests/.*|demisto_sdk/commands/init/templates/.*
+
+- id: coverage-analyze
+  name: coverage-analyze
+  entry: demisto-sdk coverage-analyze
+  description: Running demisto-sdk coverage-analyze and showing a coverage report.
+  language: python
+  pass_filenames: false
+  args: ["-i", ".coverage"]
+
+- id: merge-pytest-reports
+  name: merge-pytest-reports
+  entry: merge-pytest-reports
+  language: python
+  require_serial: true
+  pass_filenames: false
+
+- id: validate-deleted-files
+  name: validate-deleted-files
+  entry: validate-deleted-files
+  language: python
+  require_serial: true
+  pass_filenames: false
+
+- id: validate-content-path
+  name: validate-content-path
+  entry: validate-content-path
+  language: python
+  pass_filenames: true
+
+- id: validate-xsoar-config
+  name: validate-xsoar-config
+  entry: validate-xsoar-config
+  language: python
+  pass_filenames: true
+
+- id: validate-file-permission-changes
+  name: validate-file-permission-changes
+  description: Validate that file permissions haven't been changed.
+  entry: validate-file-permission-changes
+  language: python
+  files: ^Packs/
+
+- id: prevent-mypy-global-ignore
+  name: prevent-mypy-global-ignore
+  description: Prevent Python files from setting global mypy ignore
+  entry: prevent-mypy-global-ignore
+  language: python
+  files: .*Packs/.*/(?:Integrations|Scripts)/.*.py$
+
+- id: generate-command-docs
+  name: Generate Documentation for Changed Commands
+  description: Generates documentation for commands when a `_setup.py` file is modified.
+  entry: generate-command-docs
+  language: python
+  files: ^.*_setup\.py$
+
+- id: validate-validation-config-file
+  name: Validation for validate_config file
+  description: Validate the validation config file
+  entry: validate-validation-config-file
+  language: python
+  pass_filenames: false
+  args:
+  - --config-path=demisto_sdk/commands/validate/sdk_validation_config.toml
